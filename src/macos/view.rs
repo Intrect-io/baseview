@@ -242,11 +242,22 @@ extern "C" fn accepts_first_mouse(_this: &Object, _sel: Sel, _event: id) -> BOOL
 }
 
 extern "C" fn become_first_responder(this: &Object, _sel: Sel) -> BOOL {
+    // Guard: ivar may be null if this view is still being initialised (e.g. when
+    // a parent view already has a window and addSubview: fires viewWillMoveToWindow
+    // before WindowState has been stored).
+    let state_ptr: *const c_void = unsafe { *this.get_ivar(BASEVIEW_STATE_IVAR) };
+    if state_ptr.is_null() {
+        return YES;
+    }
     let state = unsafe { WindowState::from_view(this) };
     let is_key_window = unsafe {
         let window: id = msg_send![this, window];
-        let is_key_window: BOOL = msg_send![window, isKeyWindow];
-        is_key_window == YES
+        if window.is_null() {
+            false
+        } else {
+            let is_key_window: BOOL = msg_send![window, isKeyWindow];
+            is_key_window == YES
+        }
     };
     if is_key_window {
         state.trigger_deferrable_event(Event::Window(WindowEvent::Focused));
@@ -255,6 +266,11 @@ extern "C" fn become_first_responder(this: &Object, _sel: Sel) -> BOOL {
 }
 
 extern "C" fn resign_first_responder(this: &Object, _sel: Sel) -> BOOL {
+    // Guard: same race condition as become_first_responder.
+    let state_ptr: *const c_void = unsafe { *this.get_ivar(BASEVIEW_STATE_IVAR) };
+    if state_ptr.is_null() {
+        return YES;
+    }
     let state = unsafe { WindowState::from_view(this) };
     state.trigger_deferrable_event(Event::Window(WindowEvent::Unfocused));
     YES
