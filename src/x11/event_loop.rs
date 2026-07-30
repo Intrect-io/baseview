@@ -29,7 +29,8 @@ impl EventLoop {
             window,
             handler: Box::new(handler),
             parent_handle,
-            frame_interval: Duration::from_millis(15),
+            // 60 Hz (was 15ms ≈ 66.7 Hz). Sync with macOS/Win frame clocks.
+            frame_interval: Duration::from_nanos(1_000_000_000 / 60),
             event_loop_running: false,
             new_physical_size: None,
         }

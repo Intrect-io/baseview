@@ -438,7 +438,9 @@ impl WindowState {
             copyDescription: None,
         };
 
-        let timer = CFRunLoopTimer::new(0.0, 0.015, 0, 0, timer_callback, &mut timer_context);
+        // 60 Hz frame clock (was 0.015s ≈ 66.7 Hz). AUD-660 / enzyme GUI target.
+        const FRAME_INTERVAL_SECS: f64 = 1.0 / 60.0;
+        let timer = CFRunLoopTimer::new(0.0, FRAME_INTERVAL_SECS, 0, 0, timer_callback, &mut timer_context);
 
         CFRunLoop::get_current().add_timer(&timer, kCFRunLoopDefaultMode);
 
