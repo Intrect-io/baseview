@@ -56,3 +56,7 @@ doctest = true
 name = "open_parented"
 test = true
 doctest = true
+
+[[test]]
+name = "macos_failed_build"
+harness = false

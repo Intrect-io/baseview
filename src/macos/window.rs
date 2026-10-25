@@ -68,6 +68,14 @@ pub(super) struct WindowInner {
     gl_context: Option<GlContext>,
 }
 
+/// Undo `create_view` for a view whose window state was never created.
+unsafe fn discard_unbuilt_view(ns_view: id) {
+    let notification_center: id = msg_send![class!(NSNotificationCenter), defaultCenter];
+    let () = msg_send![notification_center, removeObserver: ns_view];
+    ns_view.removeFromSuperview();
+    let () = msg_send![ns_view, release];
+}
+
 impl WindowInner {
     pub(super) fn close(&self) {
         if self.open.get() {
@@ -257,10 +265,23 @@ impl<'a> Window<'a> {
         B: FnOnce(&mut crate::Window) -> H,
         B: Send + 'static,
     {
-        let mut window = crate::Window::new(Window { inner: &window_inner });
-        let window_handler = Box::new(build(&mut window));
-
         let ns_view = window_inner.ns_view;
+
+        let mut window = crate::Window::new(Window { inner: &window_inner });
+        // A plug-in host embeds the view and the plug-in framework usually catches
+        // a panicking editor so the host survives. If `build` panics here, the
+        // view never gets its state and `close()` will never run, yet `create_view`
+        // already registered it with NSNotificationCenter: the next key-window
+        // change would call `handle_notification` on a null state and crash the
+        // host. Undo `create_view` before letting the panic continue.
+        let window_handler =
+            match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| build(&mut window))) {
+                Ok(handler) => Box::new(handler),
+                Err(payload) => {
+                    unsafe { discard_unbuilt_view(ns_view) };
+                    std::panic::resume_unwind(payload);
+                }
+            };
 
         let window_state = Rc::new(WindowState {
             window_inner,
