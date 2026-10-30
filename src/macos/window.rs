@@ -11,7 +11,7 @@ use cocoa::appkit::{
 use cocoa::base::{id, nil, BOOL, NO, YES};
 use cocoa::foundation::{NSAutoreleasePool, NSPoint, NSRect, NSSize, NSString};
 use core_foundation::runloop::{
-    CFRunLoop, CFRunLoopTimer, CFRunLoopTimerContext, __CFRunLoopTimer, kCFRunLoopDefaultMode,
+    __CFRunLoopTimer, kCFRunLoopDefaultMode, CFRunLoop, CFRunLoopTimer, CFRunLoopTimerContext,
 };
 use keyboard_types::KeyboardEvent;
 use objc::class;
@@ -66,6 +66,14 @@ pub(super) struct WindowInner {
 
     #[cfg(feature = "opengl")]
     gl_context: Option<GlContext>,
+}
+
+/// Undo `create_view` for a view whose window state was never created.
+unsafe fn discard_unbuilt_view(ns_view: id) {
+    let notification_center: id = msg_send![class!(NSNotificationCenter), defaultCenter];
+    let () = msg_send![notification_center, removeObserver: ns_view];
+    ns_view.removeFromSuperview();
+    let () = msg_send![ns_view, release];
 }
 
 impl WindowInner {
@@ -257,10 +265,23 @@ impl<'a> Window<'a> {
         B: FnOnce(&mut crate::Window) -> H,
         B: Send + 'static,
     {
-        let mut window = crate::Window::new(Window { inner: &window_inner });
-        let window_handler = Box::new(build(&mut window));
-
         let ns_view = window_inner.ns_view;
+
+        let mut window = crate::Window::new(Window { inner: &window_inner });
+        // A plug-in host embeds the view and the plug-in framework usually catches
+        // a panicking editor so the host survives. If `build` panics here, the
+        // view never gets its state and `close()` will never run, yet `create_view`
+        // already registered it with NSNotificationCenter: the next key-window
+        // change would call `handle_notification` on a null state and crash the
+        // host. Undo `create_view` before letting the panic continue.
+        let window_handler =
+            match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| build(&mut window))) {
+                Ok(handler) => Box::new(handler),
+                Err(payload) => {
+                    unsafe { discard_unbuilt_view(ns_view) };
+                    std::panic::resume_unwind(payload);
+                }
+            };
 
         let window_state = Rc::new(WindowState {
             window_inner,
@@ -440,7 +461,8 @@ impl WindowState {
 
         // 60 Hz frame clock (was 0.015s ≈ 66.7 Hz). AUD-660 / enzyme GUI target.
         const FRAME_INTERVAL_SECS: f64 = 1.0 / 60.0;
-        let timer = CFRunLoopTimer::new(0.0, FRAME_INTERVAL_SECS, 0, 0, timer_callback, &mut timer_context);
+        let timer =
+            CFRunLoopTimer::new(0.0, FRAME_INTERVAL_SECS, 0, 0, timer_callback, &mut timer_context);
 
         CFRunLoop::get_current().add_timer(&timer, kCFRunLoopDefaultMode);
 

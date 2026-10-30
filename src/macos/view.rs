@@ -541,6 +541,13 @@ extern "C" fn dragging_exited(this: &Object, _sel: Sel, _sender: id) {
 }
 
 extern "C" fn handle_notification(this: &Object, _cmd: Sel, notification: id) {
+    // Guard: a view whose window state was never stored (see
+    // `discard_unbuilt_view`) must not turn a notification into a null
+    // dereference inside the host process.
+    let state_ptr: *const c_void = unsafe { *this.get_ivar(BASEVIEW_STATE_IVAR) };
+    if state_ptr.is_null() {
+        return;
+    }
     unsafe {
         let state = WindowState::from_view(this);
 
