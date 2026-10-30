@@ -11,7 +11,7 @@ use cocoa::appkit::{
 use cocoa::base::{id, nil, BOOL, NO, YES};
 use cocoa::foundation::{NSAutoreleasePool, NSPoint, NSRect, NSSize, NSString};
 use core_foundation::runloop::{
-    CFRunLoop, CFRunLoopTimer, CFRunLoopTimerContext, __CFRunLoopTimer, kCFRunLoopDefaultMode,
+    __CFRunLoopTimer, kCFRunLoopDefaultMode, CFRunLoop, CFRunLoopTimer, CFRunLoopTimerContext,
 };
 use keyboard_types::KeyboardEvent;
 use objc::class;
@@ -461,7 +461,8 @@ impl WindowState {
 
         // 60 Hz frame clock (was 0.015s ≈ 66.7 Hz). AUD-660 / enzyme GUI target.
         const FRAME_INTERVAL_SECS: f64 = 1.0 / 60.0;
-        let timer = CFRunLoopTimer::new(0.0, FRAME_INTERVAL_SECS, 0, 0, timer_callback, &mut timer_context);
+        let timer =
+            CFRunLoopTimer::new(0.0, FRAME_INTERVAL_SECS, 0, 0, timer_callback, &mut timer_context);
 
         CFRunLoop::get_current().add_timer(&timer, kCFRunLoopDefaultMode);
 
